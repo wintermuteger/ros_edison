@@ -1,0 +1,19 @@
+<launch>
+<!-- This launchfile should bring up a node that broadcasts a ros image
+ transport on /webcam/image_raw-->
+<arg name="DEVICE" default="/dev/video0"/>
+<arg name="FRAMERATE" default="5/1"/>
+<arg name="PUBLISH_FRAME" default="false"/>
+
+<node ns="v4l" name="gscam_driver_v4l" pkg="gscam" type="gscam" output="screen">
+<param name="camera_name" value="default"/>
+<param name="gscam_config" value="v4l2src device=$(arg DEVICE) ! video/x-raw-yuv,framerate=$(arg FRAMERATE),width=320,height=240! ffmpegcolorspace"/>
+
+<param name="frame_id" value="/v4l_frame"/>
+<param name="sync_sink" value="false"/>
+<param name="image_encoding" value="rgb8"/>
+
+
+</node>
+
+</launch>
