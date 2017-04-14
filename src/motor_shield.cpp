@@ -30,14 +30,14 @@ void ctrlEngineA(const std_msgs::Float32& msg)
       dirA = 1;
       powA = (uint8_t)(-msg.data*255.0f); 
     }  
-  if(~timerRequested)
+  if(timerRequested == false)
     {  
       //
       //Call engines control
       //
       motors_control(dirA,powA,'A');
     }
-  else //timerRequested
+  else //timerRequested == true
     {
       dirA_buff = (int16_t)dirA;
       powA_buff = (int16_t)powA;
@@ -63,14 +63,14 @@ void ctrlEngineB(const std_msgs::Float32& msg)
       dirB = 1;
       powB = (uint8_t)(-msg.data*255.0f); 
     }
-  if(~timerRequested)
+  if(timerRequested == false)
     { 
       //
       //Call engines control
       //
       motors_control(dirB,powB,'B');
     }
-  else //timerRequested
+  else //timerRequested == true;
     {
       dirB_buff = (int16_t)dirB;
       powB_buff = (int16_t)powB;
@@ -84,7 +84,7 @@ void setTimer(const std_msgs::Int16& msg)
   if(msg.data >= 0)
   {
     timerVal = msg.data;
-    ROS_INFO("TimerRequested - Parameters set to timerVal", timerVal);
+    ROS_INFO("TimerRequested - Parameters set to timerVal %d", timerVal);
   }
 }
 
@@ -158,8 +158,17 @@ int main(int argc, char** argv)
   timerRunning = false;
   timerVal = -1;
 
+  bool lastTimerRequested = false;
+
   while(true)
   {
+    
+    if(lastTimerRequested != timerRequested)
+      {
+	ROS_INFO("Status of timerRequested changed to %d", timerRequested);
+      }
+    lastTimerRequested = timerRequested;
+
     if(timerRequested) //Timer has been requested, check if all values (timer, engineA and engineB) have been received
       {
 	if(powA_buff >= 0 && powB_buff >= 0 && timerVal >= 0)
@@ -167,8 +176,8 @@ int main(int argc, char** argv)
 	    timerRequested = false;
 	    timerRunning = true;
 	    //Start motors
-	    motors_control((uint8_t)powA_buff,(uint8_t)dirA_buff,'A');
-	    motors_control((uint8_t)powB_buff,(uint8_t)dirB_buff,'B');
+	    motors_control((uint8_t)dirA_buff,(uint8_t)powA_buff,'A');
+	    motors_control((uint8_t)dirB_buff,(uint8_t)powB_buff,'B');
 
 	    ROS_INFO("Timed operation started - Parameters set to dirA: %d, powA: %d, dirB: %d, powB: %d, timer %d", dirA_buff, powA_buff, dirB_buff, powB_buff, timerVal);
 	  }
