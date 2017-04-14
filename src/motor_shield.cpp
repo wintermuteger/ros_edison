@@ -1,16 +1,16 @@
 #include "motor_shield.h"
 
-//ATTENTION: The code right now does basically nothing. The mechanism is missing that waits for engineA and engineB being programmed if timerRequested is set. I am in fear of race conditions here. In this case timerRunning basically will never become active.
-
 //Global tracking the timer status for timed engine-control
-bool timer_engA_set = false;
-bool timer_engB_set = false;
+int16_t dirA_buff = -1;
+int16_t powA_buff = -1;
+int16_t dirB_buff = -1;
+int16_t powB_buff = -1;
 bool timerRequested = false;
 bool timerRunning = false;
-unsigned int timerVal = 0;
+int16_t timerVal = -1;
 
 //
-//Callback for "activateEngine" Service
+//Callback for "engineA" Service
 //
 void ctrlEngineA(const std_msgs::Float32& msg)
 {
@@ -30,16 +30,23 @@ void ctrlEngineA(const std_msgs::Float32& msg)
       dirA = 1;
       powA = (uint8_t)(-msg.data*255.0f); 
     }  
-
-  //
-  //Call engines control
-  //
-  motors_control(dirA,powA,'A');
+  if(~timerRequested)
+    {  
+      //
+      //Call engines control
+      //
+      motors_control(dirA,powA,'A');
+    }
+  else //timerRequested
+    {
+      dirA_buff = (int16_t)dirA;
+      powA_buff = (int16_t)powA;
+      ROS_INFO("TimerRequested - Parameters set to dirA: %d, powA: %d", dirA_buff, powA_buff);
+    }
 }
 
 void ctrlEngineB(const std_msgs::Float32& msg)
 {
-
   //
   //Determine the control values for the motor control command!
   //
@@ -56,30 +63,66 @@ void ctrlEngineB(const std_msgs::Float32& msg)
       dirB = 1;
       powB = (uint8_t)(-msg.data*255.0f); 
     }
-  
-  //
-  //Call engines control
-  //
-  motors_control(dirB,powB,'B');
+  if(~timerRequested)
+    { 
+      //
+      //Call engines control
+      //
+      motors_control(dirB,powB,'B');
+    }
+  else //timerRequested
+    {
+      dirB_buff = (int16_t)dirB;
+      powB_buff = (int16_t)powB;
+      ROS_INFO("TimerRequested - Parameters set to dirB: %d, powB: %d", dirB_buff, powB_buff);
+    }
 }
 
 //Function to set the tick timer
 void setTimer(const std_msgs::Int16& msg)
 {
-  if(msg.data > 0)
+  if(msg.data >= 0)
   {
     timerVal = msg.data;
-    if(timer_engA_set && timer_engB_set)
-    {
-       timerRunning = true;
-    }
-    else
-    {
-       timerRequested = true;
-    } 
+    ROS_INFO("TimerRequested - Parameters set to timerVal", timerVal);
   }
 }
 
+//Service to handle state control commands
+bool controlEngine(ros_edison::MotorShield::Request & req,ros_edison::MotorShield::Response &res)
+{
+  switch(req.ctrlCmd)
+    {
+    case CMD_REQUEST_TIMER:
+      res.success = true;
+      ROS_INFO("Timer requested");
+      powA_buff = -1;
+      dirA_buff = -1;
+      powB_buff = -1;
+      dirB_buff = -1;
+      timerRunning = false;
+      timerVal = -1;
+      timerRequested = true;
+      break;
+    case CMD_RESET_TIMER:
+      res.success = true;
+      ROS_INFO("Timer reset");
+      timerRequested = false;
+      timerRunning = false;
+      powA_buff = -1;
+      dirA_buff = -1;
+      powB_buff = -1;
+      dirB_buff = -1;
+      timerVal = -1;
+      break;
+    default:
+      res.success = false;
+      ROS_ERROR("Motor-Shield received unknown control command with code %d", req.ctrlCmd);
+      break;
+    };
+
+  return res.success;
+}
 //
 //Main function - setting up all services, puglishers and subscribers of this node
 //
@@ -102,27 +145,46 @@ int main(int argc, char** argv)
   ros::Subscriber subA = n.subscribe("engineA", 1000, ctrlEngineA);
   ros::Subscriber subB = n.subscribe("engineB", 1000, ctrlEngineB);
   ros::Subscriber subT = n.subscribe("timer", 1000, setTimer);
+  ros::ServiceServer service = n.advertiseService("MotorShield", controlEngine);
 
   ROS_INFO("Motor control is ready");
 
   ros::Rate r(10);
-
-  timer_engA_set = false;
-  timer_engB_set = false;
+  powA_buff = -1;
+  dirA_buff = -1;
+  powB_buff = -1;
+  dirB_buff = -1;
   timerRequested = false;
   timerRunning = false;
-  timerVal = 0;
+  timerVal = -1;
 
   while(true)
   {
-    if(timerRunning)
+    if(timerRequested) //Timer has been requested, check if all values (timer, engineA and engineB) have been received
+      {
+	if(powA_buff >= 0 && powB_buff >= 0 && timerVal >= 0)
+	  {
+	    timerRequested = false;
+	    timerRunning = true;
+	    //Start motors
+	    motors_control((uint8_t)powA_buff,(uint8_t)dirA_buff,'A');
+	    motors_control((uint8_t)powB_buff,(uint8_t)dirB_buff,'B');
+
+	    ROS_INFO("Timed operation started - Parameters set to dirA: %d, powA: %d, dirB: %d, powB: %d, timer %d", dirA_buff, powA_buff, dirB_buff, powB_buff, timerVal);
+	  }
+      }
+    else if(timerRunning) //Timer was first requested and is now running
     {
       if(timerVal == 0)
       {
+	//Reset all timer globals and stop control
 	motors_control(0,0,'A');
 	motors_control(0,0,'B');
-	timer_engA_set = false;
-	timer_engB_set = false;
+	powA_buff = -1;
+	dirA_buff = -1;
+	powB_buff = -1;
+	dirB_buff = -1;
+	timerVal = -1;
 	timerRequested = false;
 	timerRunning = false;
       }

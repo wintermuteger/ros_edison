@@ -1,4 +1,3 @@
-int16 engineA  # Values between -255 and +255 for engineA
-int16 engineB  # Values between -255 and +255 for engineB
+uint8 ctrlCmd  # ControlCode
 ---
 bool success   # indicate successful run of triggered service
